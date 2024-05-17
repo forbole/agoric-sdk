@@ -128,7 +128,7 @@ import (
 	packetforwardtypes "github.com/cosmos/ibc-apps/middleware/packet-forward-middleware/v6/packetforward/types"
 
 	// unnamed import of statik for swagger UI support
-	_ "github.com/cosmos/cosmos-sdk/client/docs/statik"
+	_ "github.com/Agoric/agoric-sdk/golang/cosmos/client/docs/statik"
 )
 
 const appName = "agoric"
@@ -915,9 +915,9 @@ func unreleasedUpgradeHandler(app *GaiaApp, targetUpgrade string) func(sdk.Conte
 					"@agoric/builders/scripts/vats/updateStTiaPriceFeed.js",
 				),
 				// Add new auction contract. The old one will be retired shortly.
-				vm.CoreProposalStepForModules( "@agoric/builders/scripts/vats/add-auction.js"),
+				vm.CoreProposalStepForModules("@agoric/builders/scripts/vats/add-auction.js"),
 				// upgrade vaultFactory.
-				vm.CoreProposalStepForModules( "@agoric/builders/scripts/vats/upgradeVaults.js"),
+				vm.CoreProposalStepForModules("@agoric/builders/scripts/vats/upgradeVaults.js"),
 			}
 		}
 

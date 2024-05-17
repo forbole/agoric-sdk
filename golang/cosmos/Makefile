@@ -6,6 +6,8 @@ GIT_COMMIT = $(shell hash=`git rev-parse --short HEAD 2>/dev/null`; if test -n "
 PR_TARGET_REPO = ../../.git
 # TODO: figure out how to handle other branches like pismo-release
 PR_TARGET_BRANCH = master
+BINDIR ?= $(GOPATH)/bin
+DOCKER := $(shell which docker)
 
 default: all
 
@@ -86,11 +88,82 @@ go.sum: go.mod
 	GO111MODULE=on go mod verify
 
 ###############################################################################
+###                              Documentation                              ###
+###############################################################################
+
+update-swagger-docs:
+	$(BINDIR)/statik -src=client/docs/swagger-ui -dest=client/docs -f -m
+	@if [ -n "$(git status --porcelain)" ]; then \
+		echo "\033[91mSwagger docs are out of sync!!!\033[0m";\
+		exit 1;\
+	else \
+		echo "\033[92mSwagger docs are in sync\033[0m";\
+	fi
+.PHONY: update-swagger-docs
+
+###############################################################################
 ###                           Protobuf                                    ###
 ###############################################################################
+protoVer=0.11.6
+protoImageName=ghcr.io/cosmos/proto-builder:$(protoVer)
+protoImage=$(DOCKER) run --rm -v $(CURDIR):/workspace --workdir /workspace --user $(shell id -u):$(shell id -g) $(protoImageName)
 
 proto-gen: proto-tools
 	PATH="${BIN}:$$PATH" ./scripts/protocgen.sh
+
+SWAGGER_PROTO_DIR=./swagger-proto
+SWAGGER_THIRD_PARTY_DIR=$(SWAGGER_PROTO_DIR)/third_party
+SWAGGER_COSMOS_SDK_BRANCH=release/v0.46.x
+SWAGGER_IBC_BRANCH=release/v6.3.x
+proto-download-deps:
+	mkdir -p "$(SWAGGER_THIRD_PARTY_DIR)/cosmos_tmp" && \
+	cd "$(SWAGGER_THIRD_PARTY_DIR)/cosmos_tmp" && \
+	git init && \
+	git remote add origin "https://github.com/cosmos/cosmos-sdk.git" && \
+	git config core.sparseCheckout true && \
+	printf "proto\nthird_party\n" > .git/info/sparse-checkout && \
+	git pull origin $(SWAGGER_COSMOS_SDK_BRANCH) && \
+	rm -f ./proto/buf.* && \
+	mv ./proto/* ..
+	rm -rf "$(SWAGGER_THIRD_PARTY_DIR)/cosmos_tmp"
+
+	mkdir -p "$(SWAGGER_THIRD_PARTY_DIR)/ibc_tmp" && \
+	cd "$(SWAGGER_THIRD_PARTY_DIR)/ibc_tmp" && \
+	git init && \
+	git remote add origin "https://github.com/cosmos/ibc-go.git" && \
+	git config core.sparseCheckout true && \
+	printf "proto\n" > .git/info/sparse-checkout && \
+	git pull origin $(SWAGGER_IBC_BRANCH) && \
+	rm -f ./proto/buf.* && \
+	mv ./proto/* ..
+	rm -rf "$(SWAGGER_THIRD_PARTY_DIR)/ibc_tmp"
+
+	mkdir -p "$(SWAGGER_THIRD_PARTY_DIR)/cosmos_proto_tmp" && \
+	cd "$(SWAGGER_THIRD_PARTY_DIR)/cosmos_proto_tmp" && \
+	git init && \
+	git remote add origin "https://github.com/cosmos/cosmos-proto.git" && \
+	git config core.sparseCheckout true && \
+	printf "proto\n" > .git/info/sparse-checkout && \
+	git pull origin main && \
+	rm -f ./proto/buf.* && \
+	mv ./proto/* ..
+	rm -rf "$(SWAGGER_THIRD_PARTY_DIR)/cosmos_proto_tmp"
+
+	mkdir -p "$(SWAGGER_THIRD_PARTY_DIR)/gogoproto" && \
+	curl -SSL https://raw.githubusercontent.com/cosmos/gogoproto/main/gogoproto/gogo.proto > "$(SWAGGER_THIRD_PARTY_DIR)/gogoproto/gogo.proto"
+
+	mkdir -p "$(SWAGGER_THIRD_PARTY_DIR)/google/api" && \
+	curl -sSL https://raw.githubusercontent.com/googleapis/googleapis/master/google/api/annotations.proto > "$(SWAGGER_THIRD_PARTY_DIR)/google/api/annotations.proto"
+	curl -sSL https://raw.githubusercontent.com/googleapis/googleapis/master/google/api/http.proto > "$(SWAGGER_THIRD_PARTY_DIR)/google/api/http.proto"
+
+	curl -sSL https://raw.githubusercontent.com/cosmos/ibc-go/$(SWAGGER_IBC_BRANCH)/third_party/proto/proofs.proto > "$(SWAGGER_THIRD_PARTY_DIR)/proofs.proto"
+
+proto-swagger-gen:
+	@echo "Generating Protobuf Swagger"
+	$(MAKE) proto-download-deps
+	@$(protoImage) sh ./scripts/protoc-swagger-gen.sh
+	$(MAKE) update-swagger-docs
+	@rm -rf $(SWAGGER_PROTO_DIR)
 
 proto-lint: proto-tools
 	${BIN}/buf lint
